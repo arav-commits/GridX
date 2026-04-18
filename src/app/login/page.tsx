@@ -5,11 +5,13 @@ import { BsLightningFill, BsArrowRight, BsShieldLock, BsHouseDoor, BsCheckCircle
 import { GlassCard } from "@/components/ui/GlassCard";
 import { useAuth } from "@/context/AuthContext";
 import { CLUSTERS, Cluster } from "@/data/mockData";
+import { supabase } from "@/lib/supabaseClient";
 
 export default function LoginPage() {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     name: "",
+    email: "",
     state: "",
     city: "",
     phone: "",
@@ -18,22 +20,46 @@ export default function LoginPage() {
   });
   const [foundCluster, setFoundCluster] = useState<Cluster | null>(null);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const { login } = useAuth();
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (step === 1) {
-      if (!formData.name || !formData.state || !formData.city || !formData.phone) {
-        setError("Please fill all fields");
+      if (!formData.name || !formData.email || !formData.state || !formData.city || !formData.phone) {
+        setError("Please fill all fields including Email.");
         return;
       }
+      setLoading(true);
       setError("");
+      const { error } = await supabase.auth.signInWithOtp({ email: formData.email });
+      setLoading(false);
+      
+      if (error) {
+        setError("Failed to send code: " + error.message);
+        return;
+      }
       setStep(2);
     } else if (step === 2) {
-      if (formData.otp !== "1234") {
-        setError("Invalid OTP. Use 1234 for demo.");
+      if (!formData.otp || formData.otp.length < 6) {
+        setError("Please enter the 6-digit OTP sent to your email.");
         return;
       }
+      setLoading(true);
       setError("");
+      
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: formData.email,
+        token: formData.otp,
+        type: "email"
+      });
+      
+      setLoading(false);
+
+      if (error) {
+        setError("Invalid OTP: " + error.message);
+        return;
+      }
+
       setStep(3);
     }
   };
@@ -49,15 +75,34 @@ export default function LoginPage() {
     }
   };
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
     if (foundCluster) {
+      setLoading(true);
+      
+      // Save profile implicitly
+      const { data: userSession } = await supabase.auth.getSession();
+      if (userSession.session?.user) {
+        await supabase.from('users').upsert({
+          id: userSession.session.user.id,
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          state: formData.state,
+          city: formData.city,
+          cluster_id: foundCluster.id
+        });
+      }
+
       login({
         name: formData.name,
+        email: formData.email,
         state: formData.state,
         city: formData.city,
         phone: formData.phone,
         cluster: foundCluster
       });
+      
+      setLoading(false);
     }
   };
 
@@ -137,6 +182,16 @@ export default function LoginPage() {
                   </div>
                 </div>
                 <div>
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase ml-1">Email Address</label>
+                  <input 
+                    type="email" 
+                    placeholder="john@example.com"
+                    className="w-full mt-1 bg-white/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:ring-2 ring-[color:var(--color-azure)]/20 outline-none"
+                    value={formData.email}
+                    onChange={e => setFormData({...formData, email: e.target.value})}
+                  />
+                </div>
+                <div>
                   <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase ml-1">Phone Number</label>
                   <div className="flex mt-1 bg-white/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden focus-within:ring-2 ring-[color:var(--color-azure)]/20 transition-all">
                     <span className="px-3 flex items-center bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-bold border-r border-slate-200 dark:border-slate-700">+91</span>
@@ -155,9 +210,10 @@ export default function LoginPage() {
               
               <button 
                 onClick={handleNext}
-                className="w-full mt-8 bg-[color:var(--color-azure)] hover:bg-opacity-90 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
+                disabled={loading}
+                className={`w-full mt-8 bg-[color:var(--color-azure)] hover:bg-opacity-90 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 ${loading ? 'opacity-70' : ''}`}
               >
-                Continue <BsArrowRight />
+                {loading ? "Sending..." : "Continue"} <BsArrowRight />
               </button>
             </div>
           )}
@@ -167,16 +223,16 @@ export default function LoginPage() {
               <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-2xl flex items-center justify-center mb-6 text-[color:var(--color-azure)] shadow-inner">
                 <BsShieldLock size={32} />
               </div>
-              <h1 className="text-2xl font-bold font-display text-[color:var(--color-azure)] mb-1">Verify Phone</h1>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 leading-relaxed">We sent a 4-digit OTP to <span className="font-bold text-slate-700 dark:text-slate-300">+91 {formData.phone}</span></p>
+              <h1 className="text-2xl font-bold font-display text-[color:var(--color-azure)] mb-1">Verify Email</h1>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 leading-relaxed">We sent a 6-digit OTP to <span className="font-bold text-slate-700 dark:text-slate-300">{formData.email}</span></p>
               
               <div>
                 <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase ml-1">OTP Code</label>
                 <input 
                   type="text" 
-                  maxLength={4}
-                  placeholder="0000"
-                  className="w-full mt-1 bg-white/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-4 text-center text-2xl font-black tracking-[1em] focus:ring-2 ring-[color:var(--color-azure)]/20 outline-none"
+                  maxLength={6}
+                  placeholder="000000"
+                  className="w-full mt-1 bg-white/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-4 text-center text-2xl font-black tracking-[0.5em] focus:ring-2 ring-[color:var(--color-azure)]/20 outline-none"
                   value={formData.otp}
                   onChange={e => setFormData({...formData, otp: e.target.value})}
                 />
@@ -187,9 +243,10 @@ export default function LoginPage() {
               <div className="mt-8 space-y-3">
                 <button 
                   onClick={handleNext}
-                  className="w-full bg-[color:var(--color-azure)] hover:bg-opacity-90 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
+                  disabled={loading}
+                  className={`w-full bg-[color:var(--color-azure)] hover:bg-opacity-90 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 ${loading ? 'opacity-70' : ''}`}
                 >
-                  Verify <BsCheckCircleFill />
+                  {loading ? "Verifying..." : "Verify"} <BsCheckCircleFill />
                 </button>
                 <button 
                   onClick={() => setStep(1)}
@@ -246,12 +303,12 @@ export default function LoginPage() {
 
               <button 
                 onClick={handleFinish}
-                disabled={!foundCluster}
+                disabled={!foundCluster || loading}
                 className={`w-full bg-[color:var(--color-azure)] text-white font-bold py-4 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 ${
-                  !foundCluster ? "opacity-50 grayscale cursor-not-allowed" : "hover:bg-opacity-90 hover:scale-[1.02]"
+                  !foundCluster || loading ? "opacity-50 grayscale cursor-not-allowed" : "hover:bg-opacity-90 hover:scale-[1.02]"
                 }`}
               >
-                Join Cluster <BsArrowRight />
+                {loading ? "Joining..." : "Join Cluster"} <BsArrowRight />
               </button>
             </div>
           )}

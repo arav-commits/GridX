@@ -2,17 +2,18 @@
 
 import React, { useState, useEffect } from "react";
 import { GlassCard } from "../ui/GlassCard";
-import { BsClockHistory, BsArrowDown } from "react-icons/bs";
+import { BsClockHistory, BsArrowDown, BsArrowUp } from "react-icons/bs";
 import { getSecondsUntilNextInterval } from "@/utils/time";
 
-import { getCurrentPricingData } from "@/lib/pricing";
+interface NextPricePanelProps {
+  price?: number;
+  trend?: "rising" | "falling";
+}
 
-export function NextPricePanel() {
+export function NextPricePanel({ price, trend = "falling" }: NextPricePanelProps) {
   const [timeLeft, setTimeLeft] = useState(0);
-  const [price, setPrice] = useState<number | null>(null);
-  const [status, setStatus] = useState<string>("Off-Peak");
 
-  // ⏱️ Timer logic (your existing code)
+  // ⏱️ Timer logic
   useEffect(() => {
     const updateTime = () => {
       setTimeLeft(getSecondsUntilNextInterval());
@@ -21,23 +22,6 @@ export function NextPricePanel() {
     updateTime(); // initial sync
 
     const interval = setInterval(updateTime, 1000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // 🌐 Dynamic price update from local script
-  useEffect(() => {
-    const updatePrice = () => {
-      const data = getCurrentPricingData();
-      setPrice(data.price);
-      // Optional logic (you can refine this later)
-      if (data.price <= 4) setStatus("Off-Peak");
-      else setStatus("Peak");
-    };
-
-    updatePrice();
-
-    const interval = setInterval(updatePrice, 1000); // 1s sync so it updates promptly on interval
 
     return () => clearInterval(interval);
   }, []);
@@ -70,15 +54,15 @@ export function NextPricePanel() {
       </div>
       <div className="flex items-baseline gap-1 mb-3">
         <span className="text-3xl font-bold text-[color:var(--color-azure)]">
-          ₹{price !== null ? price.toFixed(2) : "—"}
+          ₹{typeof price === "number" ? price.toFixed(2) : "—"}
         </span>
         <span className="text-sm font-medium text-slate-400">/kWh</span>
       </div>
 
       {/* Status */}
-      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold border border-emerald-100 dark:border-emerald-800/50">
-        <BsArrowDown strokeWidth={1} />
-        <span>{status}</span>
+      <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${price && price > 4 ? 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-100 dark:border-red-800/50' : 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-800/50'}`}>
+        {trend === "rising" ? <BsArrowUp strokeWidth={1} /> : <BsArrowDown strokeWidth={1} />}
+        <span>{price && price > 4 ? "Peak" : "Off-Peak"}</span>
       </div>
     </GlassCard>
   );
